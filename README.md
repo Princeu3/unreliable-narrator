@@ -1,8 +1,12 @@
 <h1 align="center">The Unreliable Narrator</h1>
 
 <p align="center">
-  Nine health channels. Everybody arguing. Nobody checking.<br/>
+  Ten health channels. Everybody arguing. Nobody checking.<br/>
   <em>Ask a corpus of videos what nobody mentioned, and which two channels contradict each other.</em>
+</p>
+
+<p align="center">
+  <a href="https://web-production-cde1b.up.railway.app"><strong>Live demo →</strong></a>
 </p>
 
 <p align="center">
@@ -31,7 +35,7 @@ So here's a question nobody can currently ask: *where does the narrator disagree
 
 <img src="docs/graph.png" alt="The context graph — dark nodes are channels, rings are entities sized by mention count" width="900"/>
 
-Hover linoleic acid: **23 mentions, across 5 of 9 channels**, arriving through all three modalities at once — said, shown, *and* written.
+Hover linoleic acid: **26 mentions, across 6 of 10 channels**, arriving through all three modalities at once — said, shown, *and* written.
 
 Ask a vector store "how many" and it guesses. `count(DISTINCT v)` is a count.
 

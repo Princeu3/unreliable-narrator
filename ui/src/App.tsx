@@ -11,7 +11,8 @@ type Stats = { nodes: number; relationships: number; videos: number; channels: n
   contradictions: number; verified: number; modalities: Record<string, number> }
 type Gap = { name: string; type: string; shownVia: string[]; hits: number }
 type Con = { about: string; channelA: string; claimA: string; jumpToA: string
-  channelB: string; claimB: string; jumpToB: string; verdict: string | null; sourceUrl: string | null }
+  channelB: string; claimB: string; jumpToB: string; verdict: string | null
+  sourceUrl: string | null; sources: string[] }
 type Rate = { channel: string; claims: number; evidenced: number; scenes: number; evidenceRate: number }
 type Clip = { videoId: string; startSec: number; endSec: number; channel: string
   claim: string; verdict: string | null; sourceUrl: string | null }
@@ -221,11 +222,18 @@ export default function App() {
                         </div>
                       ))}
                   </div>
-                  {c.sourceUrl && (
-                    <a href={c.sourceUrl} target="_blank" rel="noreferrer"
-                      className="text-muted-foreground mt-4 block truncate border-t pt-3 text-[11px] hover:underline">
-                      checked against · {c.sourceUrl.replace(/^https?:\/\//, "").slice(0, 90)}
-                    </a>
+                  {(c.sources?.length ?? 0) > 0 && (
+                    <div className="mt-4 flex flex-col gap-1 border-t pt-3">
+                      <span className="text-muted-foreground text-[11px]">
+                        checked against {c.sources.length > 1 ? `${c.sources.length} sources` : ""}
+                      </span>
+                      {c.sources.map(u => (
+                        <a key={u} href={u} target="_blank" rel="noreferrer"
+                          className="text-muted-foreground block truncate text-[11px] hover:underline">
+                          · {u.replace(/^https?:\/\//, "").slice(0, 90)}
+                        </a>
+                      ))}
+                    </div>
                   )}
                 </CardContent>
               </Card>

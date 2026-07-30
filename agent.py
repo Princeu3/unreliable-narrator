@@ -106,12 +106,19 @@ CONTRADICTIONS = """
 MATCH (v1:Video)-[:HAS_SCENE]->(s1:Scene)-[:ASSERTS]->(a:Claim)-[x:CONTRADICTS]->(b:Claim)
 MATCH (v2:Video)-[:HAS_SCENE]->(s2:Scene)-[:ASSERTS]->(b)
 OPTIONAL MATCH (a)-[ver:VERIFIED_AS]->(ev:Evidence)
+// one row per CONTRADICTS edge. A claim checked against two papers has two VERIFIED_AS edges,
+// and without this collect the same disagreement came back — and rendered — once per source.
+WITH x, v1, s1, a, v2, s2, b,
+     [v IN collect(DISTINCT ver.verdict) WHERE v IS NOT NULL] AS verdicts,
+     [u IN collect(DISTINCT ev.url) WHERE u IS NOT NULL] AS sources
 RETURN x.about AS about,
        v1.channel AS channelA, a.text AS claimA,
        v1.url + '&t=' + toString(toInteger(s1.startSec)) AS jumpToA,
        v2.channel AS channelB, b.text AS claimB,
        v2.url + '&t=' + toString(toInteger(s2.startSec)) AS jumpToB,
-       ver.verdict AS verdict, ev.url AS sourceUrl
+       CASE size(verdicts) WHEN 0 THEN null WHEN 1 THEN verdicts[0] ELSE 'MIXED' END AS verdict,
+       sources[0] AS sourceUrl,      // kept so existing callers still read one URL
+       sources AS sources
 ORDER BY about
 """
 

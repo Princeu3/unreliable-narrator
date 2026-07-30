@@ -240,6 +240,17 @@ def make_supercut():
     return {"message": msg, "src": "/out/contradictions.mp4", "count": len(rs)}
 
 
+@app.get("/api/health")
+def health():
+    """Readiness that actually proves the graph is reachable, not just that the process is up."""
+    try:
+        n = rows("MATCH (n) RETURN count(n) AS c")[0]["c"]
+        return {"ok": True, "nodes": n, "clips": len(list(pathlib.Path("data").glob("*.mp4")))}
+    except Exception as e:
+        return Response(json.dumps({"ok": False, "error": str(e)[:200]}),
+                        status_code=503, media_type="application/json")
+
+
 class Link(BaseModel):
     url: str
 
@@ -296,3 +307,13 @@ def ingest(link: Link):
         yield ev(step="done", log=p.stdout[-400:])
 
     return StreamingResponse(run(), media_type="text/event-stream")
+
+
+# ── static SPA, mounted last so it never shadows /api, /media or /out ──────────────────────
+_DIST = pathlib.Path("ui/dist")
+if _DIST.exists():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="ui")
+else:
+    @app.get("/")
+    def _no_ui():
+        return {"ui": "not built — run `npm run build` in ui/, or use the Vite dev server"}
