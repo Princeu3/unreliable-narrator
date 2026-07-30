@@ -245,20 +245,45 @@ def ingest(link: Link):
     vid = link.url.strip().split("v=")[-1].split("&")[0]
 
     def run():
-        yield f"data: {json.dumps({'step':'fetching','id':vid})}\n\n"
+        def ev(**kw): return f"data: {json.dumps({'id': vid, **kw})}\n\n"
+
         mp4 = pathlib.Path(f"data/{vid}.mp4")
         if not mp4.exists():
-            subprocess.run(["yt-dlp", "-f", "bv*[height<=480]+ba/b[height<=480]",
-                            "--merge-output-format", "mp4", "-o", f"data/{vid}.raw.%(ext)s",
-                            "--write-info-json", f"https://www.youtube.com/watch?v={vid}"],
-                           check=False)
+            yield ev(step="fetching")
+            # YouTube needs all three: a current yt-dlp, the JS-challenge solver, and browser
+            # cookies. Drop any one and it is either "sign in to confirm you're not a bot"
+            # or a 403 on the media fetch.
+            dl = subprocess.run(["yt-dlp", "--remote-components", "ejs:github",
+                                 "--cookies-from-browser", "chrome",
+                                 "-f", "bv*[height<=480]+ba/b[height<=480]/b",
+                                 "--merge-output-format", "mp4",
+                                 "-o", f"data/{vid}.raw.%(ext)s", "--write-info-json",
+                                 f"https://www.youtube.com/watch?v={vid}"],
+                                capture_output=True, text=True)
+            raw = pathlib.Path(f"data/{vid}.raw.mp4")
+            if not raw.exists():
+                yield ev(step="error", error="download failed",
+                         detail=(dl.stderr or dl.stdout)[-300:])
+                return
+            yield ev(step="clipping")
             subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-ss", "60",
-                            "-t", "180", "-i", f"data/{vid}.raw.mp4", "-c:v", "libx264",
+                            "-i", str(raw), "-t", "180", "-c:v", "libx264",
                             "-crf", "23", "-preset", "veryfast", "-c:a", "aac",
                             "-movflags", "+faststart", str(mp4)], check=False)
-        yield f"data: {json.dumps({'step':'analyzing','id':vid})}\n\n"
+            raw.unlink(missing_ok=True)
+            if not mp4.exists():
+                yield ev(step="error", error="clip failed")
+                return
+
+        yield ev(step="analyzing")
         p = subprocess.run([sys.executable, "ingest.py", str(mp4)],
                            capture_output=True, text=True)
-        yield f"data: {json.dumps({'step':'done','id':vid,'log':p.stdout[-400:]})}\n\n"
+        # a non-zero exit, or a SKIPPED line, means nothing reached the graph. Say so —
+        # reporting "done" on a failed ingest is worse than failing.
+        if p.returncode != 0 or "SKIPPED" in p.stdout:
+            yield ev(step="error", error="analysis failed",
+                     detail=(p.stderr or p.stdout)[-300:])
+            return
+        yield ev(step="done", log=p.stdout[-400:])
 
     return StreamingResponse(run(), media_type="text/event-stream")

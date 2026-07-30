@@ -126,7 +126,8 @@ RETURN x.about AS about,
 
 - `verify.py` does not run as part of ingest. Contradiction and verdict edges only appear after you run it by hand, so a freshly ingested video shows up in the graph with no conflicts attached.
 - The clip window is fixed. Both `fetch_corpus.sh` and the UI's ingest endpoint cut 180 seconds starting at a hardcoded offset — 60s in the UI path — rather than analyzing the whole video. That keeps the run inside the free analysis quota.
-- Ingest errors are not surfaced in the UI. `server.py` shells out to `yt-dlp`, `ffmpeg`, and `ingest.py` with `check=False` and streams the last 400 characters of stdout; a failed download reports `done` like a successful one.
+- Ingest reports failures as a truncated stderr tail on an SSE `error` step. Enough to know it broke, not enough to debug from; the real output is in the server log.
+- YouTube downloads need browser cookies. `fetch_corpus.sh` and the UI ingest path both pass `--cookies-from-browser chrome`, so a machine without a logged-in Chrome profile gets a bot check instead of a video.
 - Verification is capped at 6 claims per run. The run prints what it left unchecked instead of truncating silently.
 - Entity keys are lowercase with naive singularization, so near-duplicate nodes are possible.
 - Debunking channels state a position in order to rebut it. The judge is prompted to discard those, but extraction does not tag stance, so some quoted claims still read as assertions.

@@ -29,7 +29,8 @@ for c in "${CLIPS[@]}"; do
   # Full download, then clip locally. --download-sections makes ffmpeg fetch googlevideo
   # directly and YouTube 403s it; yt-dlp's own downloader carries the right headers.
   yt-dlp \
-    -f "bv*[height<=480]+ba/b[height<=480]" --merge-output-format mp4 \
+    --remote-components ejs:github --cookies-from-browser chrome \
+    -f "bv*[height<=480]+ba/b[height<=480]/b" --merge-output-format mp4 \
     -o "data/${id}.raw.%(ext)s" \
     --write-info-json \
     "https://www.youtube.com/watch?v=${id}" || { echo "FAILED $id"; continue; }
