@@ -63,18 +63,27 @@ def stats():
       CALL (){ MATCH (n) RETURN count(n) AS nodes }
       CALL (){ MATCH ()-[x]->() RETURN count(x) AS rels }
       CALL (){ MATCH (v:Video) RETURN count(v) AS videos }
+      CALL (){ MATCH (v:Video) RETURN count(DISTINCT v.channel) AS channels }
       CALL (){ MATCH (s:Scene) RETURN count(s) AS scenes }
+      CALL (){ MATCH (e:Entity) RETURN count(e) AS entities }
+      CALL (){ MATCH (c:Claim) RETURN count(c) AS claims }
+      // footage actually analyzed: the furthest scene end per video, summed
+      CALL (){ MATCH (v:Video)-[:HAS_SCENE]->(s:Scene)
+               WITH v, max(s.endSec) AS endSec
+               RETURN sum(endSec) AS seconds }
       CALL (){ MATCH ()-[x:CONTRADICTS]->() RETURN count(x) AS cons }
       CALL (){ MATCH ()-[x:VERIFIED_AS]->() RETURN count(x) AS ver }
       CALL (){ MATCH ()-[x:MENTIONS]->() RETURN collect([x.modality, 1]) AS raw }
-      RETURN nodes, rels, videos, scenes, cons, ver, raw
+      RETURN nodes, rels, videos, channels, scenes, entities, claims, seconds, cons, ver, raw
     """)[0]
     mods = {}
     for k, _ in r["raw"]:
         mods[k] = mods.get(k, 0) + 1
     return {"nodes": r["nodes"], "relationships": r["rels"], "videos": r["videos"],
-            "scenes": r["scenes"], "contradictions": r["cons"], "verified": r["ver"],
-            "modalities": mods}
+            "channels": r["channels"], "scenes": r["scenes"], "entities": r["entities"],
+            "claims": r["claims"], "minutes": round((r["seconds"] or 0) / 60),
+            "mentions": sum(mods.values()),
+            "contradictions": r["cons"], "verified": r["ver"], "modalities": mods}
 
 
 @app.get("/api/modality-gap")

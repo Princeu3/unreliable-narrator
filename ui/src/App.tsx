@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input"
 import { ForceGraph, type GNode } from "@/components/ForceGraph"
 import { ClipPlayer } from "@/components/ClipPlayer"
 
-type Stats = { nodes: number; relationships: number; videos: number; scenes: number
+type Stats = { nodes: number; relationships: number; videos: number; channels: number
+  scenes: number; entities: number; claims: number; minutes: number; mentions: number
   contradictions: number; verified: number; modalities: Record<string, number> }
 type Gap = { name: string; type: string; shownVia: string[]; hits: number }
 type Con = { about: string; channelA: string; claimA: string; jumpToA: string
@@ -30,6 +31,7 @@ export default function App() {
   const [cutting, setCutting] = useState(false)
   const [url, setUrl] = useState("")
   const [step, setStep] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   const [sel, setSel] = useState<GNode | null>(null)
   const [selClips, setSelClips] = useState<Clip[]>([])
 
@@ -48,7 +50,7 @@ export default function App() {
 
   async function ingest() {
     if (!url.trim()) return
-    setStep("fetching")
+    setErr(null); setStep("fetching")
     const res = await fetch("/api/ingest", { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) })
     const reader = res.body!.getReader(), dec = new TextDecoder()
@@ -58,6 +60,10 @@ export default function App() {
       for (const line of dec.decode(value).split("\n")) {
         if (!line.startsWith("data: ")) continue
         const ev = JSON.parse(line.slice(6))
+        if (ev.step === "error") {          // never report success on a failed ingest
+          setErr(`${ev.error}${ev.detail ? " — " + ev.detail.slice(0, 160) : ""}`)
+          setStep(null); return
+        }
         setStep(ev.step)
         if (ev.step === "done") { load(); setUrl("") }
       }
@@ -95,8 +101,10 @@ export default function App() {
             disagreements become queryable.
           </p>
           <div className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-4">
-            {[["nodes", stats?.nodes], ["relationships", stats?.relationships],
-              ["channels", stats?.videos], ["scenes", stats?.scenes],
+            {[["videos", stats?.videos],
+              ["min of footage", stats?.minutes], ["scenes", stats?.scenes],
+              ["entities", stats?.entities], ["claims", stats?.claims],
+              ["nodes", stats?.nodes], ["relationships", stats?.relationships],
               ["contradictions", stats?.contradictions], ["verified", stats?.verified]].map(([l, v]) => (
               <div key={l as string} className="flex flex-col">
                 <span className="text-3xl font-semibold tabular-nums tracking-tight">{v ?? "—"}</span>
@@ -131,13 +139,16 @@ export default function App() {
               <div className="min-w-0 flex-1">
                 <ForceGraph nodes={graph.nodes} links={graph.links}
                   onSelect={pick} selectedId={sel?.id ?? null} />
-              </div>
-              <aside className="w-full shrink-0 lg:w-80">
-                {!sel ? (
-                  <div className="text-muted-foreground flex h-full min-h-40 items-center justify-center rounded-md border border-dashed px-4 text-center text-xs leading-relaxed">
+                {!sel && (
+                  <p className="text-muted-foreground mt-2 text-center text-xs">
                     Click any node to play the footage behind it.
-                  </div>
-                ) : (
+                  </p>
+                )}
+              </div>
+              {/* only claim the side column once there's something in it — an empty 20rem
+                  panel was squeezing the canvas by a third for a one-line hint. */}
+              {sel && (
+                <aside className="w-full shrink-0 lg:w-80">
                   <div className="flex flex-col gap-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -172,8 +183,8 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                )}
-              </aside>
+                </aside>
+              )}
             </div>
           </CardContent></Card>
         </section>
@@ -309,6 +320,20 @@ export default function App() {
               onKeyDown={e => e.key === "Enter" && ingest()} className="max-w-lg" />
             <Button onClick={ingest} disabled={!!step}>{step ? step + "…" : "Ingest"}</Button>
           </div>
+          {err && (
+            <p className="mt-3 max-w-2xl rounded-md border px-3 py-2 text-xs leading-relaxed"
+               style={{ borderColor: "var(--color-disputed)", color: "var(--color-disputed)" }}>
+              {err}
+            </p>
+          )}
+          {step && !err && (
+            <p className="text-muted-foreground mt-3 text-xs">
+              {step === "fetching" ? "downloading the video…"
+                : step === "clipping" ? "cutting a 3-minute slice…"
+                : step === "analyzing" ? "TwelveLabs segmenting, OpenAI extracting entities, writing to Neo4j — about a minute…"
+                : "done"}
+            </p>
+          )}
         </section>
 
         <footer className="text-muted-foreground border-t pt-6 text-[11px] leading-relaxed">

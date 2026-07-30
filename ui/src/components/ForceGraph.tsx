@@ -17,7 +17,7 @@ const MOD: Record<string, string> = {
 /** The graph as the artifact, not a decoration. Entity nodes size by how often they are
  *  mentioned; edges take the colour of the channel the mention came through, so a node fed by
  *  three colours is one that was seen, said, AND written. */
-export function ForceGraph({ nodes, links, height = 660, onSelect, selectedId }:
+export function ForceGraph({ nodes, links, height = 720, onSelect, selectedId }:
   { nodes: GNode[]; links: GLink[]; height?: number
     onSelect?: (n: GNode) => void; selectedId?: string | null }) {
   const wrap = useRef<HTMLDivElement>(null)
@@ -39,12 +39,18 @@ export function ForceGraph({ nodes, links, height = 660, onSelect, selectedId }:
     // copies, not from `links` — that mismatch is why the graph drew no edges at all.
     const ls: GLink[] = links.map(l => ({ ...l }))
     setSimLinks(ls)
+    // Forces were tuned against an 880px canvas, so a wider card just grew the margins and left
+    // the cluster balled up in the middle. Scale distance and repulsion with the space we get.
+    const k = Math.max(1, Math.min(1.7, w / 880))
     const s = forceSimulation<GNode>(nodes)
-      .force("link", forceLink<GNode, any>(ls).id((d: any) => d.id).distance(92).strength(0.3))
-      .force("charge", forceManyBody().strength(-340))
+      .force("link", forceLink<GNode, any>(ls).id((d: any) => d.id).distance(92 * k).strength(0.3))
+      .force("charge", forceManyBody().strength(-340 * k))
       .force("center", forceCenter(w / 2, height / 2))
-      .force("collide", forceCollide<GNode>().radius(d => radius(d) + 7))
-      .force("x", forceX<GNode>(w / 2).strength(0.055))
+      // labelled nodes reserve room for their text, otherwise "Dr Brad Stanfield" lands on top
+      // of "Huberman Lab Clips". ponytail: width estimated from length, not measured.
+      .force("collide", forceCollide<GNode>().radius(d =>
+        radius(d) + 7 + (labelled(d) ? Math.min(58, d.label.length * 2.6) : 0)))
+      .force("x", forceX<GNode>(w / 2).strength(0.055 / k))
       .force("y", forceY<GNode>(height / 2).strength(0.09))
       .alphaDecay(0.035)
     // clamp inside the frame. forceCenter pulls the mean to the middle but says nothing about
@@ -69,6 +75,8 @@ export function ForceGraph({ nodes, links, height = 660, onSelect, selectedId }:
   }, [nodes, links, w, height])
 
   const radius = (d: GNode) => d.kind === "video" ? 9 : 3 + Math.min(11, (d.hits ?? 1) * 1.15)
+  // which nodes carry a permanent label (hover labels come and go, so they don't affect layout)
+  const labelled = (d: GNode) => d.kind === "video" || (d.hits ?? 0) >= 9
 
   // O(links) once per hover, not O(nodes x links) every render
   const near = useMemo(() => {
@@ -115,7 +123,7 @@ export function ForceGraph({ nodes, links, height = 660, onSelect, selectedId }:
                 stroke={d.kind === "video" ? "var(--color-foreground)"
                   : (d.mods?.length ?? 0) > 1 ? "var(--color-accent)" : "var(--color-border)"}
                 strokeWidth={d.kind === "video" ? 0 : 1.5} />
-              {(d.kind === "video" || (d.hits ?? 0) >= 9 || hover?.id === d.id) && (
+              {(labelled(d) || hover?.id === d.id) && (
                 <text x={radius(d) + 5} y={3.5}
                   className="pointer-events-none text-[10px]"
                   paintOrder="stroke" stroke="white" strokeWidth={3} strokeLinejoin="round"

@@ -1,133 +1,101 @@
-# The Unreliable Narrator
+<h1 align="center">The Unreliable Narrator</h1>
 
-Ask a corpus of videos what nobody mentioned, and which two channels contradict each other — questions vector search cannot express.
+<p align="center">
+  Nine health channels. Everybody arguing. Nobody checking.<br/>
+  <em>Ask a corpus of videos what nobody mentioned, and which two channels contradict each other.</em>
+</p>
 
-Built at *Hack the Video Agent Context Graph*, AWS Builder Loft SF, 30 July 2026.
+<p align="center">
+  <img src="docs/hero.png" alt="Video says three things at once. Everything else blends them into one." width="900"/>
+</p>
 
-Entity search is not the point. Counting, negation, and cross-video contradiction are. A vector store can find the clip about linoleic acid; it cannot tell you how many channels mentioned it, which channels discussed inflammation and never mentioned it at all, or where two videos state incompatible things about the same substance.
+<p align="center">
+  <sub>Built at <b>Hack the Video Agent Context Graph</b> · AWS Builder Loft SF · 30 July 2026</sub>
+</p>
 
-## What it does
+---
 
-- Splits every scene into three separate channels — what was **said**, what was **shown**, what was **written on screen** — and keeps them apart all the way into the graph as `(:Scene)-[:MENTIONS {modality}]->(:Entity)`. Fused embeddings blend the channels, so "on screen but never spoken" stops being representable.
-- Counts. `count(DISTINCT v)` over `MENTIONS` edges is exact; a similarity search asked "how many" makes a number up.
-- Negates. `WHERE NOT EXISTS { ... }` finds the videos that discuss a topic and never touch the substance at the center of it.
-- Finds contradictions across videos. A pure-Cypher query narrows every claim pair down to those from different channels about the same entity; a model then judges which genuinely conflict, and only the survivors get a web search.
-- Writes verdicts back as edges — `(:Claim)-[:VERIFIED_AS {verdict}]->(:Evidence {url})` — where `verdict` is `SUPPORTED`, `DISPUTED`, or `NO_SOURCE_FOUND`. Never true or false.
-- Turns a query result into a video. Any Cypher returning `videoId, startSec, endSec` is an edit decision list, and `build_supercut` hands it to ffmpeg.
+## The problem
 
-The agent reads the graph and only reads it. Every write goes through deterministic Python in `ingest.py` and `verify.py`; the agent's Cypher tool refuses `CREATE`, `MERGE`, `DELETE`, `SET`, `REMOVE`, `DROP`, `FOREACH`, `LOAD CSV`, and `CALL db.*` / `CALL apoc.*`.
+Every video says three things at once. What's **said** out loud. What's **shown**. And what's **written on screen** — the chart, the study title, the citation.
 
-## Architecture
+Every video AI system blends those three into one embedding before you can ask it anything. Once they're blended, you can't unblend them.
+
+So here's a question nobody can currently ask: *where does the narrator disagree with the study he's showing you?*
+
+---
+
+## Three questions vector search cannot answer
+
+### 1 · Count
+
+<img src="docs/graph.png" alt="The context graph — dark nodes are channels, rings are entities sized by mention count" width="900"/>
+
+Hover linoleic acid: **23 mentions, across 5 of 9 channels**, arriving through all three modalities at once — said, shown, *and* written.
+
+Ask a vector store "how many" and it guesses. `count(DISTINCT v)` is a count.
+
+### 2 · Negate
+
+<img src="docs/negation.png" alt="Shown on screen, never said aloud — IL-6, TNF, the Sydney Diet Heart Study" width="900"/>
+
+IL-6. TNF. The Sydney Diet Heart Study. Every one sitting in a chart or a citation on screen, and no narrator ever says it out loud.
+
+There is no embedding for absence. This is a `NOT` in a `WHERE` clause, and that's the only reason it's answerable.
+
+### 3 · Contradict
+
+<img src="docs/contradiction.png" alt="Two channels disagreeing on the same molecule, both clips cued to the second" width="900"/>
+
+Two doctors. Same molecule. Opposite answer. Neither has ever seen the other video.
+
+The graph put them next to each other — and then went and checked. The verdict is an edge pointing at a real paper. We never say true or false: **SUPPORTED**, **DISPUTED**, or **NO_SOURCE_FOUND**.
+
+---
+
+## How it works
 
 ```mermaid
 flowchart LR
-  V[video mp4] --> TL[TwelveLabs Pegasus 1.5<br/>time_based_metadata]
-  TL --> S[scenes: spoken / onscreen text / visible entities]
-  S --> OA[OpenAI enrichment<br/>text to typed entities per channel]
-  OA --> N[(Neo4j<br/>Video / Scene / Entity / Claim)]
-  N --> C[contradiction detection<br/>Cypher narrows, model judges, web search adjudicates]
+  V[video] --> TL[TwelveLabs<br/>said / shown / written<br/>as three fields]
+  TL --> OA[OpenAI<br/>typed entities per field]
+  OA --> N[(Neo4j<br/>modality on every edge)]
+  N --> C[Cypher narrows<br/>model judges<br/>web search adjudicates]
   C --> N
-  N --> API[FastAPI server.py]
-  API --> UI[React + Vite UI]
-  N --> AG[Strands agent CLI]
+  N --> AG[Strands agent<br/>read-only]
 ```
 
-## Sponsor tools
+One property carries the design — `(:Scene)-[:MENTIONS {modality}]->(:Entity)`. Keeping `speech`, `visual`, and `ocr` apart all the way into the graph is what turns "shown but never said" from impossible into a `WHERE` clause.
 
-| tool | used for |
+The agent reads the graph and only reads it. Every write goes through deterministic Python; the agent's Cypher tool refuses `CREATE`, `MERGE`, `DELETE`, `SET`, `DROP`.
+
+| | |
 |---|---|
-| **TwelveLabs** | `analyze_async` with `pegasus1.5` and a `segment_definitions` response format. One call per video returns timestamped scenes with `spoken_claims`, `onscreen_text`, `visible_entities`, and `evidence_shown` as separate fields (`ingest.py`). |
-| **OpenAI** | Three passes. Entity extraction per channel with a structured `response_format` (`ingest.py`); contradiction judging over candidate claim pairs (`verify.py`); adjudication against the literature via the native `web_search` tool on `/v1/responses` (`verify.py`). |
-| **Neo4j** | Aura instance holding the graph. Uniqueness constraints on `Video.id`, `Scene.id`, `Entity.name`, `Claim.id`, so re-running ingest is idempotent (`ingest.py`, `queries.cypher`). |
-| **Strands Agents** | Agent loop over three tools — `query_graph` (read-only Cypher), `find_contradictions`, `build_supercut` — on `OpenAIResponsesModel` (`agent.py`). |
+| **TwelveLabs** | Returns spoken / on-screen / visible as three separate fields. Without this there is one transcript blob and no modality to query. |
+| **OpenAI** | Types entities per field, judges which contradictions are real, adjudicates against the literature. |
+| **Neo4j** | Holds the modality edges. A vector store cannot express `NOT`. |
+| **Strands** (AWS) | The agent read path, behind a read-only Cypher guard. |
 
-## Setup
+---
 
-Needs Python 3.12+, Node 20+, `ffmpeg`, and `yt-dlp` on PATH.
+## Run it
 
 ```bash
 git clone https://github.com/Princeu3/unreliable-narrator.git
 cd unreliable-narrator
 
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-
-cp .env.example .env      # TwelveLabs + OpenAI keys, Neo4j Aura URI + password
-```
-
-`NEO4J_URI` comes from the credentials file Aura hands you at instance creation (`neo4j+s://xxxxxxxx.databases.neo4j.io`). Everything reads plain environment variables, so load them however you like:
-
-```bash
-set -a; source .env; set +a
-```
-
-Frontend deps:
-
-```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env          # TwelveLabs + OpenAI keys, Neo4j Aura URI
 cd ui && npm install && cd ..
+
+.venv/bin/uvicorn server:app --port 8000   # API
+cd ui && npm run dev                        # UI on :5173
 ```
 
-Run the two processes:
+Then ask it something:
 
 ```bash
-.venv/bin/uvicorn server:app --reload --port 8000    # API on :8000
-cd ui && npm run dev                                  # UI on :5173, proxies /api to :8000
-```
-
-Get videos into the graph — either paste a YouTube URL into the UI, which downloads a 180s slice and runs the same pipeline, or do it from the terminal:
-
-```bash
-./fetch_corpus.sh                    # 8 seed-oil explainers, 180s each, 480p, into data/
-python ingest.py                     # analyze every mp4 in data/ (cached) and write the graph
-python ingest.py data/FDIgoBusMxY.mp4 # or one file
-python verify.py                     # find conflicts, adjudicate, write verdict edges
 python agent.py "what is shown on screen but never said?"
 ```
 
-Useful flags: `ingest.py --from-cache` rebuilds the graph from `cache/` with no API calls, `--analyze-only` caches without writing, `--no-enrich` skips the OpenAI pass. `verify.py --report` prints candidate conflicts without writing. `--selftest` runs each module's logic offline. `node e2e.mjs` drives the live page with Playwright once both servers are up.
-
-## Example queries
-
-From `queries.cypher`. Shown on screen, never spoken aloud:
-
-```cypher
-MATCH (e:Entity)<-[m:MENTIONS]-(:Scene)
-WITH e, collect(DISTINCT m.modality) AS mods, count(m) AS hits
-WHERE 'ocr' IN mods AND NOT 'speech' IN mods AND hits > 1
-RETURN e.name AS shownButNeverSaid, e.type, mods, hits
-ORDER BY hits DESC LIMIT 20;
-```
-
-Channels that discuss inflammation and never once mention linoleic acid:
-
-```cypher
-MATCH (v:Video)-[:HAS_SCENE]->(:Scene)-[:MENTIONS]->(:Entity {name:'inflammation'})
-WITH DISTINCT v
-WHERE NOT EXISTS {
-  (v)-[:HAS_SCENE]->(:Scene)-[:MENTIONS]->(:Entity {name:'linoleic acid'})
-}
-RETURN v.channel, v.title, v.url;
-```
-
-Who disagrees with whom, with a timestamp link on both sides:
-
-```cypher
-MATCH (v1:Video)-[:HAS_SCENE]->(s1:Scene)-[:ASSERTS]->(a:Claim)-[x:CONTRADICTS]->(b:Claim)
-MATCH (v2:Video)-[:HAS_SCENE]->(s2:Scene)-[:ASSERTS]->(b)
-RETURN x.about AS about,
-       v1.channel AS channelA, a.text AS claimA,
-       v1.url + '&t=' + toString(toInteger(s1.startSec)) AS linkA,
-       v2.channel AS channelB, b.text AS claimB,
-       v2.url + '&t=' + toString(toInteger(s2.startSec)) AS linkB,
-       x.rationale;
-```
-
-## Known limits
-
-- `verify.py` does not run as part of ingest. Contradiction and verdict edges only appear after you run it by hand, so a freshly ingested video shows up in the graph with no conflicts attached.
-- The clip window is fixed. Both `fetch_corpus.sh` and the UI's ingest endpoint cut 180 seconds starting at a hardcoded offset — 60s in the UI path — rather than analyzing the whole video. That keeps the run inside the free analysis quota.
-- Ingest reports failures as a truncated stderr tail on an SSE `error` step. Enough to know it broke, not enough to debug from; the real output is in the server log.
-- YouTube downloads need browser cookies. `fetch_corpus.sh` and the UI ingest path both pass `--cookies-from-browser chrome`, so a machine without a logged-in Chrome profile gets a bot check instead of a video.
-- Verification is capped at 6 claims per run. The run prints what it left unchecked instead of truncating silently.
-- Entity keys are lowercase with naive singularization, so near-duplicate nodes are possible.
-- Debunking channels state a position in order to rebut it. The judge is prompted to discard those, but extraction does not tag stance, so some quoted claims still read as assertions.
+**→ [TECHNICAL.md](TECHNICAL.md)** — data model, contradiction pipeline, every Cypher query, setup detail, and the honest list of known limits.

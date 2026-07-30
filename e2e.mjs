@@ -105,9 +105,10 @@ ok('supercut length matches the edit list', Math.abs(cutDur - expect) < 2,
 
 // ── videos: lazy at first, loaded when scrolled to ──────────────────────────
 // fresh page: earlier steps scrolled the document, so the observers have already fired
-await page.reload({ waitUntil: 'networkidle' })
-await page.evaluate(() => window.scrollTo(0, 0))   // browsers restore scroll across reloads
-await page.waitForTimeout(700)
+// fresh navigation, not reload: reload restores the prior scroll position first, so the
+// observers fire before any scrollTo(0,0) can land
+await page.goto(UI, { waitUntil: 'networkidle' })
+await page.waitForTimeout(900)
 const videos = page.locator('video')
 const nVid = await videos.count()
 ok('clip players present', nVid > 4, `${nVid} players`)
