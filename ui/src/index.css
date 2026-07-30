@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* shadcn tokens — light only, deliberately. Paper, ink, one accent per modality. */
+@theme {
+  --color-background: oklch(0.995 0 0);
+  --color-foreground: oklch(0.21 0.01 260);
+  --color-muted: oklch(0.972 0.002 260);
+  --color-muted-foreground: oklch(0.55 0.012 260);
+  --color-border: oklch(0.923 0.004 260);
+  --color-card: oklch(1 0 0);
+  --color-accent: oklch(0.55 0.16 258);
+  --color-speech: oklch(0.58 0.14 250);
+  --color-visual: oklch(0.60 0.12 160);
+  --color-ocr: oklch(0.63 0.14 60);
+  --color-disputed: oklch(0.57 0.18 25);
+  --color-supported: oklch(0.53 0.13 155);
+  --radius: 0.625rem;
+}
+
+html { color-scheme: light; }
+* { border-color: var(--color-border); }
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: oklch(0.92 0.04 258); }
